@@ -80,8 +80,8 @@ for store in storeSection:
     for link in links:
         productLink = link.get_attribute('href')
         if productLink is not None:
-            productName = protocol + '//' + domain + productLink
-            productList.append(productName)
+            productLink = protocol + '//' + domain + productLink
+            productList.append(productLink)
 
 
 
