@@ -78,7 +78,10 @@ for store in storeSection:
     links = canvas.find_elements(By.TAG_NAME, 'a')
 
     for link in links:
+        productName = link.get_attribute('aria-label')
         productLink = link.get_attribute('href')
+        if productName is None or productName.lower() == storeName.lower() or productName.lower() == storeName.strip().lower() or "more" in productName.lower():
+            continue
         if productLink is not None:
             productLink = protocol + '//' + domain + productLink
             productList.append(productLink)
