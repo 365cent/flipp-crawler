@@ -5,101 +5,107 @@ from webdriver_manager.chrome import ChromeDriverManager
 import requests
 import json
 
-productList = []
-
 class Product:
     def __init__(self, name, price, image):
         self.name = name
         self.price = price
         self.image = image
 
-# Set the path to your Chromedriver
-chromedriver_path = "chromedriver-mac-arm64/chromedriver"
+class WebScraper:
+    def __init__(self):
+        self.service = Service(ChromeDriverManager().install())
+        self.driver = webdriver.Chrome(service=self.service)
+        self.url = 'https://flipp.com'
+        self.api_key = '87EC23E8E747F2A23B0D702B35920F01'
+        self.productList = []
+        self.protocol = self.url.split('/')[0]
+        self.domain = self.url.split('/')[2]
 
-# Setting up the webdriver
-service = Service(chromedriver_path)
-driver = webdriver.Chrome(service=service)
+    def get_postal_code(self):
+        try:
+            response = requests.get('https://geoip.mxtrans.net/json')
+            ip = json.loads(response.text)['ip']
+            response = requests.get(f'https://api.ip2location.io/?key={self.api_key}&ip={ip}')
+            postal_code = json.loads(response.text)['zip_code'].replace(' ', '')
+            return postal_code
+        except Exception as e:
+            print(f"Error getting postal code: {e}")
+            return None
 
-# Target URL
-# url = 'https://flipp.com/en-ca/waterloo-on/flyer/6100182-food-basics-flyer?postal_code=N2J1A1'  # Replace with your target URL
+    def scrape_products(self, category):
+        postal_code = self.get_postal_code()
+        if not postal_code:
+            return []
 
-# url = 'https://flipp.com/en-ca/waterloo-on/flyer/6100776-farm-boy-weekly?postal_code=N2J1A1'
+        category_url = f'{self.url}/flyers?postal_code={postal_code}'
+        self.driver.get(category_url)
+        self.driver.implicitly_wait(10)
 
-url = 'https://flipp.com'
-ip = '129.100.255.34'
-key = '87EC23E8E747F2A23B0D702B35920F01'
+        try:
+            category_element = self.driver.find_element(By.XPATH, f'//span[contains(text(), "{category}")]')
+            category_link = category_element.find_element(By.XPATH, '..').get_attribute('href')
+            self.driver.get(f'{self.url}{category_link}')
+            self.driver.implicitly_wait(10)
 
+            products = self.extract_product_info()
+            return products
+        except Exception as e:
+            print(f"Error scraping products: {e}")
+            return []
 
-# get domain name from url
-protocol = url.split('/')[0]
-domain = url.split('/')[2]
+    def extract_product_info(self):
+        products = []
+        store_sections = self.driver.find_elements(By.TAG_NAME, 'flipp-flyer-listing-item')
+        for store in store_sections:
+            storeLink = store.find_element(By.TAG_NAME, 'a').get_attribute('href')
+            storeLink = self.protocol + '//' + self.domain + storeLink
+            self.driver.get(storeLink)
+            self.driver.implicitly_wait(10)
 
-res = requests.get('https://geoip.mxtrans.net/json')
+            storeName = self.driver.find_element(By.XPATH, '//h1/span').text
+            print(storeName)
+            print('-------------------')
 
-ip = json.loads(res.text)['ip']
+            # select canvas tag from page
+            canvas = self.driver.find_element(By.XPATH, '//canvas')
 
-res = requests.get('https://api.ip2location.io/?key=' + key + '&ip=' + ip)
+            # get links from canvas tag
+            links = canvas.find_elements(By.TAG_NAME, 'a')
 
-postalCode = json.loads(res.text)['zip_code']
-postalCode = postalCode.replace(' ', '')
-print(postalCode)
-
-geoUrl = 'https://flipp.com/flyers?postal_code=' + postalCode
-
-driver.get(geoUrl)
-
-# Wait for the page to load
-driver.implicitly_wait(10)
-
-cate = driver.find_element(By.XPATH, '//div[contains(@class, "categories")]')
-gro = cate.find_element(By.XPATH, '//span[contains(text(), "Groceries")]')
-groLink = gro.find_element(By.XPATH, '..').get_attribute('href')
-
-groLink = protocol + '//' + domain + groLink
-
-driver.get(groLink)
-driver.implicitly_wait(10)
-
-storeSection = driver.find_elements(By.TAG_NAME, 'flipp-flyer-listing-item')
-for store in storeSection:
-    storeLink = store.find_element(By.TAG_NAME, 'a').get_attribute('href')
-    storeLink = protocol + '//' + domain + storeLink
-    driver.get(storeLink)
-    driver.implicitly_wait(10)
-
-    storeName = driver.find_element(By.XPATH, '//h1/span').text
-    print(storeName)
-    print('-------------------')
-
-    # select canvas tag from page
-    canvas = driver.find_element(By.XPATH, '//canvas')
-
-    # get links from canvas tag
-    links = canvas.find_elements(By.TAG_NAME, 'a')
-
-    for link in links:
-        productName = link.get_attribute('aria-label')
-        productLink = link.get_attribute('href')
-        if productName is None or productName.lower() == storeName.lower() or productName.lower() == storeName.strip().lower() or "more" in productName.lower():
-            continue
-        if productLink is not None:
-            productLink = protocol + '//' + domain + productLink
-            productList.append(productLink)
+            for link in links:
+                productName = link.get_attribute('aria-label')
+                productLink = link.get_attribute('href')
+                if productName is None or productName.lower() == storeName.lower() or productName.lower() == storeName.strip().lower() or "view more" in productName.lower():
+                    continue
+                if productLink is not None:
+                    productLink = self.protocol + '//' + self.domain + productLink
+                    self.productList.append(productLink)
 
 
 
-    for product in productList:
-        productPrice = ''
-        driver.get(product)
-        driver.implicitly_wait(10)
-        productName = driver.find_element(By.XPATH, '//h2/span').text
-        priceElement = driver.find_elements(By.XPATH, '//flipp-price/span')
-        productPrice = priceElement[0].text + '.' + priceElement[1].text
-        imageElement = driver.find_element(By.XPATH, '//div[contains(@class, "item-info-image")]')
-        productImage = imageElement.find_element(By.TAG_NAME, 'img').get_attribute('src')
-        productObj = Product(productName, productPrice, productImage)
-        productList.append(productObj)
-        print("[" + productName + "]" + " $" + productPrice + " (" + productImage + ")")
+            for product in self.productList:
+                productPrice = ''
+                self.driver.get(product)
+                self.driver.implicitly_wait(10)
+                productName = self.driver.find_element(By.XPATH, '//h2/span').text
+                priceElement = self.driver.find_elements(By.XPATH, '//flipp-price/span')
+                productPrice = priceElement[0].text + '.' + priceElement[1].text
+                imageElement = self.driver.find_element(By.XPATH, '//div[contains(@class, "item-info-image")]')
+                productImage = imageElement.find_element(By.TAG_NAME, 'img').get_attribute('src')
+                productObj = Product(productName, productPrice, productImage)
+                self.productList.append(productObj)
+                print("[" + productName + "]" + " $" + productPrice + " (" + productImage + ")")
 
-# Close the browser
-driver.quit()
+
+    def close(self):
+        self.driver.quit()
+
+def main():
+    scraper = WebScraper()
+    products = scraper.scrape_products("Groceries")
+    for product in products:
+        print(product.name, product.price, product.image)
+    scraper.close()
+
+if __name__ == "__main__":
+    main()
