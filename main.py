@@ -17,6 +17,7 @@ class WebScraper:
         self.driver = webdriver.Chrome(service=self.service)
         self.url = 'https://flipp.com'
         self.api_key = '87EC23E8E747F2A23B0D702B35920F01'
+        self.productLinkList = []
         self.productList = []
         self.protocol = self.url.split('/')[0]
         self.domain = self.url.split('/')[2]
@@ -79,11 +80,11 @@ class WebScraper:
                     continue
                 if productLink is not None:
                     productLink = self.protocol + '//' + self.domain + productLink
-                    self.productList.append(productLink)
+                    self.productLinkList.append(productLink)
 
 
 
-            for product in self.productList:
+            for product in self.productLinkList:
                 productPrice = ''
                 self.driver.get(product)
                 self.driver.implicitly_wait(10)
